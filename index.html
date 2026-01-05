@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan | GH-Pages Edition</title>
+    <title>Red Sedan | Seed-Synced MP</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
         #joystick-wrapper {
@@ -33,7 +33,6 @@
         }
         #mp-box input { background: #111; border: 1px solid #555; color: white; width: 140px; font-size: 10px; padding: 4px; margin-bottom: 5px; font-family: monospace; }
         #mp-box button { cursor: pointer; background: #333; color: white; border: 1px solid #666; width: 100%; padding: 5px; margin-bottom: 5px; font-weight: bold;}
-        #mp-box button:hover { background: #444; }
         #net-status { color: #00ff00; font-size: 9px; margin-top: 5px; text-transform: uppercase; }
     </style>
 </head>
@@ -54,7 +53,7 @@
 <div id="brake-btn">BRAKE</div>
 <div id="tp-btn">TP</div>
 <div id="ui">
-    RED SEDAN | GH-PAGES MP<br>
+    RED SEDAN | SEED-SYNC<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
     POS: <span id="pos-val">0, 0, 0</span>
 </div>
@@ -80,6 +79,19 @@
     import SimplexNoise from 'simplex-noise';
     import { Peer } from 'peerjs';
 
+    // --- TERRAIN ENGINE ---
+    let simplex = new SimplexNoise(); // Initial random seed
+    const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5; 
+    
+    function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
+
+    function updateSeed(newSeed) {
+        console.log("Syncing World Seed:", newSeed);
+        simplex = new SimplexNoise(newSeed);
+        // Force terrain refresh at current position
+        syncTerrain(chassisBody.position.x, chassisBody.position.z);
+    }
+
     // --- NETWORKING ---
     const status = document.getElementById('net-status');
     const myIdField = document.getElementById('my-id-field');
@@ -89,25 +101,24 @@
     peer.on('open', id => { 
         myIdField.value = id; 
         status.innerText = "Status: Online";
-        // Auto-join if ID is in URL
         const urlParams = new URLSearchParams(window.location.search);
         const joinId = urlParams.get('join');
-        if (joinId) {
-            status.innerText = "Status: Auto-connecting...";
-            setupConnection(peer.connect(joinId));
-        }
+        if (joinId) setupConnection(peer.connect(joinId));
     });
 
     document.getElementById('copy-link-btn').onclick = () => {
         const invite = `${window.location.origin}${window.location.pathname}?join=${peer.id}`;
-        // Manual copy for non-secure contexts/older browsers if needed
-        const el = document.createElement('textarea');
-        el.value = invite; document.body.appendChild(el); el.select();
-        document.execCommand('copy'); document.body.removeChild(el);
-        alert("Invite Link Copied!");
+        navigator.clipboard.writeText(invite).then(() => alert("Invite Link Copied!"));
     };
 
-    peer.on('connection', conn => setupConnection(conn));
+    peer.on('connection', conn => {
+        // If someone connects to US, we send them OUR peer ID as the seed
+        setupConnection(conn);
+        setTimeout(() => {
+            if(conn.open) conn.send({ t: 'seed', seed: peer.id });
+        }, 1000);
+    });
+
     document.getElementById('conn-btn').onclick = () => {
         const targetId = document.getElementById('conn-id').value.trim();
         if (targetId) setupConnection(peer.connect(targetId));
@@ -117,7 +128,10 @@
         conn.on('open', () => {
             status.innerText = "Status: Connected!";
             connections.push(conn);
-            conn.on('data', data => { if(data.t === 'u') syncRemote(conn.peer, data); });
+            conn.on('data', data => { 
+                if(data.t === 'u') syncRemote(conn.peer, data); 
+                if(data.t === 'seed') updateSeed(data.seed);
+            });
         });
         conn.on('close', () => {
             if (remotePlayers[conn.peer]) {
@@ -125,12 +139,12 @@
                 remotePlayers[conn.peer].wheels.forEach(w => scene.remove(w));
                 delete remotePlayers[conn.peer];
             }
-            status.innerText = "Status: Peer Disconnected";
         });
     }
 
     function syncRemote(id, data) {
-        if (!remotePlayers[id] && carMesh.children[0] && wheelMeshes[0]) {
+        if (!carMesh.children[0] || !wheelMeshes[0]) return;
+        if (!remotePlayers[id]) {
             const group = new THREE.Group();
             group.add(SkeletonUtils.clone(carMesh.children[0]));
             const wheels = [];
@@ -142,17 +156,13 @@
             scene.add(group);
         }
         const r = remotePlayers[id];
-        if (r) {
-            r.tP.set(data.p.x, data.p.y, data.p.z); r.tQ.set(data.q.x, data.q.y, data.q.z, data.q.w);
-            data.w.forEach((wd, i) => { 
-                if(r.wheels[i]) { r.wheels[i].position.set(wd.p.x, wd.p.y, wd.p.z); r.wheels[i].quaternion.set(wd.q.x, wd.q.y, wd.q.z, wd.q.w); }
-            });
-        }
+        r.tP.set(data.p.x, data.p.y, data.p.z); r.tQ.set(data.q.x, data.q.y, data.q.z, data.q.w);
+        data.w.forEach((wd, i) => { 
+            if(r.wheels[i]) { r.wheels[i].position.set(wd.p.x, wd.p.y, wd.p.z); r.wheels[i].quaternion.set(wd.q.x, wd.q.y, wd.q.z, wd.q.w); }
+        });
     }
 
-    // --- ENGINE ---
-    const simplex = new SimplexNoise();
-    const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5; 
+    // --- THREE.JS SETUP ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 10000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -166,13 +176,13 @@
     sun.position.set(100, 200, 100);
     scene.add(sun, new THREE.AmbientLight(0xffffff, 1.0));
 
+    // --- PHYSICS ---
     const world = new CANNON.World();
     world.gravity.set(0, -60, 0);
     world.solver.iterations = 40; 
     const groundMat = new CANNON.Material("ground"), carMat = new CANNON.Material("car");
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, carMat, { friction: 0.9, restitution: 0.0, contactEquationStiffness: 1e8, contactEquationRelaxation: 10 }));
 
-    function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
     const terrainGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, DATA_RES - 1, DATA_RES - 1);
     terrainGeo.rotateX(-Math.PI / 2);
     const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x222222, wireframe: true }));
@@ -206,26 +216,27 @@
         world.addBody(hfBody);
     }
 
-    const chassisBody = new CANNON.Body({ mass: 6.8e14, material: carMat });
-    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 2.3)), new CANNON.Vec3(0, 0.9, 0));
+    // 1. IMPROVED CHASSIS (Stable CoM)
+    const chassisBody = new CANNON.Body({ mass: 6.8e14, material: carMat, angularDamping: 0.99 });
+    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 2.3)), new CANNON.Vec3(0, 0.5, 0));
     chassisBody.position.set(0, 20, 0);
+
     const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexForwardAxis: 2, indexRightAxis: 0, indexUpAxis: 1 });
     const wOpts = { radius: WHEEL_RADIUS, directionLocal: new CANNON.Vec3(0, -1, 0), suspensionStiffness: 200, suspensionRestLength: 1, frictionSlip: 12.0, dampingRelaxation: 5, dampingCompression: 10, axleLocal: new CANNON.Vec3(-1, 0, 0) };
     [[1.2, 0.1, 1.6], [-1.2, 0.1, 1.6], [1.2, 0.1, -1.725], [-1.2, 0.1, -1.725]].forEach(p => { wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p); vehicle.addWheel(wOpts); });
     vehicle.addToWorld(world);
 
+    // --- LOADING ---
     const carMesh = new THREE.Group(); scene.add(carMesh);
     const loader = new GLTFLoader();
     loader.load('https://raw.githubusercontent.com/moo2645m/car-glb/main/scene.glb', (gltf) => {
         gltf.scene.scale.set(3, 3, 3); gltf.scene.position.set(0, -0.5, 0.2);
         carMesh.add(gltf.scene);
     });
-
     const wheelMeshes = [];
     loader.load('https://raw.githubusercontent.com/moo2645m/wheel-glb/main/Tire.glb', (gltf) => {
         const tireSource = gltf.scene;
-        const s = WHEEL_RADIUS * 0.8;
-        tireSource.scale.set(s, s, s); 
+        tireSource.scale.set(WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8); 
         for (let i = 0; i < 4; i++) {
             const wheelGroup = new THREE.Group(); wheelGroup.add(SkeletonUtils.clone(tireSource));
             scene.add(wheelGroup); wheelMeshes[i] = wheelGroup;
@@ -239,6 +250,7 @@
         scene.add(mesh); rings.push({ mesh, scale: 1, active: false });
     }
 
+    // --- UI EVENTS ---
     document.getElementById('tp-btn').onclick = () => {
         const target = prompt("Warp (X, Z):", `${Math.round(chassisBody.position.x)}, ${Math.round(chassisBody.position.z)}`);
         if (target) {
@@ -271,7 +283,6 @@
         requestAnimationFrame(animate);
         const delta = clock.getDelta();
         
-        // 60 SUBSTEPS
         for (let i = 0; i < 60; i++) { world.step(1 / 3600); }
 
         const speed = vehicle.currentVehicleSpeedKmHour, absSpeed = Math.abs(speed);
@@ -281,9 +292,16 @@
         if (isGrounded) {
             const power = drive.throttle * 2.8e15; 
             vehicle.applyEngineForce(power, 2); vehicle.applyEngineForce(power, 3);
+            
+            // ANTI-CLIPPING LINEAR BRAKE
             if (drive.brake) {
-                chassisBody.velocity.scale(0.92, chassisBody.velocity);
-                for(let i=0; i<4; i++) vehicle.setBrake(5e14, i);
+                const brakeReduction = 0.277; // 1 km/h
+                const v = chassisBody.velocity;
+                const cur = v.length();
+                if (cur > brakeReduction) {
+                    v.normalize(); v.scale(cur - brakeReduction, v);
+                } else { v.set(0, 0, 0); }
+                for(let i=0; i<4; i++) vehicle.setBrake(1e10, i);
             } else { for(let i=0; i<4; i++) vehicle.setBrake(0, i); }
         }
 
@@ -291,6 +309,7 @@
         currentSteer += ( (drive.steer * -steerMax) - currentSteer) * 3.5 * delta;
         vehicle.setSteeringValue(currentSteer, 0); vehicle.setSteeringValue(currentSteer, 1);
 
+        // Sonic Boom Rings
         if (absSpeed > 1225) {
             boomTimer += delta;
             if (boomTimer > 0.03) { 
@@ -310,6 +329,7 @@
             }
         });
 
+        // Network Broadcast
         if (now - lastSync > 50 && connections.length > 0) {
             const pkt = { t: 'u', p: chassisBody.position, q: chassisBody.quaternion, w: vehicle.wheelInfos.map(w => ({ p: w.worldTransform.position, q: w.worldTransform.quaternion })) };
             connections.forEach(c => { if(c.open) c.send(pkt); });
@@ -318,6 +338,13 @@
         for (let id in remotePlayers) {
             remotePlayers[id].mesh.position.lerp(remotePlayers[id].tP, 0.3);
             remotePlayers[id].mesh.quaternion.slerp(remotePlayers[id].tQ, 0.3);
+        }
+
+        // Safety Floor Guard
+        const floorY = getHeight(chassisBody.position.x, chassisBody.position.z);
+        if (chassisBody.position.y < floorY + 0.5) {
+            chassisBody.position.y = floorY + 0.5;
+            chassisBody.velocity.y = Math.max(0, chassisBody.velocity.y);
         }
         
         if (chassisBody.position.distanceTo(lastUpdatePos) > 200) { syncTerrain(chassisBody.position.x, chassisBody.position.z); lastUpdatePos.copy(chassisBody.position); }
