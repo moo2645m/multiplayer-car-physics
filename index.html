@@ -139,7 +139,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false; // Disable panning so the camera center stays on the car
+    controls.enablePan = true; // Disable panning so the camera center stays on the car
 
     const world = new CANNON.World();
     world.gravity.set(0, -60, 0);
