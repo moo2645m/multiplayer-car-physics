@@ -3,46 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan | Camera Locked</title>
+    <title>The Dream: Red Sedan</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
-        #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        #joystick-wrapper {
+            position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; z-index: 10;
+        }
         #joystick-knob { width: 40px; height: 40px; background: #ff0000; border-radius: 50%; position: absolute; pointer-events: none; }
-        #brake-btn { position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px; background: rgba(255,0,0,0.2); border: 2px solid #ff0000; border-radius: 12px; color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10; }
-        #reset-btn { position: absolute; top: 20px; right: 20px; width: 60px; height: 40px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.5); border-radius: 4px; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 10; cursor: pointer; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 4px; font-size: 12px; border-left: 3px solid #ff0000; pointer-events: none; line-height: 1.6; }
-        #mp-box { position: absolute; top: 20px; right: 90px; background: rgba(0,0,0,0.95); padding: 0; color: white; font-size: 10px; border: 1px solid #444; z-index: 20; overflow: hidden; transition: height 0.3s ease; height: 30px; width: 160px; }
-        #mp-box.open { height: 210px; }
-        #mp-toggle { background: #222; padding: 8px; cursor: pointer; text-align: center; font-weight: bold; border-bottom: 1px solid #444; color: #0f0; }
-        #mp-content { padding: 10px; }
-        #mp-box input { background: #111; border: 1px solid #555; color: white; width: 130px; font-size: 10px; padding: 4px; margin-bottom: 5px; font-family: monospace; }
-        #mp-box button { cursor: pointer; background: #333; color: white; border: 1px solid #666; width: 100%; padding: 5px; margin-bottom: 5px; font-weight: bold;}
-        #net-status { color: #00ff00; font-size: 9px; margin-top: 5px; text-transform: uppercase; }
+        #brake-btn {
+            position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px;
+            background: rgba(255,0,0,0.1); border: 1px solid #ff0000; border-radius: 12px;
+            color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10;
+        }
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.9);
+            padding: 12px; border-radius: 4px; font-size: 11px; border-left: 2px solid #ff0000; 
+            pointer-events: none; line-height: 1.6; letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
 
-<div id="mp-box">
-    <div id="mp-toggle">NETWORK [+/-]</div>
-    <div id="mp-content">
-        ID:<br>
-        <input type="text" id="my-id-field" value="Connecting..." readonly onclick="this.select()">
-        <button id="copy-link-btn">COPY INVITE LINK</button>
-        <hr style="border:0; border-top:1px solid #333">
-        JOIN ID:<br>
-        <input type="text" id="conn-id" placeholder="Paste ID here">
-        <button id="conn-btn" style="background:#b00">MANUAL JOIN</button>
-        <div id="net-status">Status: Initializing</div>
-    </div>
-</div>
-
 <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
 <div id="brake-btn">BRAKE</div>
-<div id="reset-btn">RESET</div>
 <div id="ui">
-    RED SEDAN | V2.2<br>
+    RED SEDAN | V3.5.6<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
-    POS: <span id="pos-val">0, 0</span>
+    STEERING: STATIC WEAK (0.08)<br>
+    ENGINE: 4.1e15 | MODE: STABLE
 </div>
 
 <script type="importmap">
@@ -51,8 +41,7 @@
             "three": "https://unpkg.com/three@0.182.0/build/three.module.js",
             "three/addons/": "https://unpkg.com/three@0.182.0/examples/jsm/",
             "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js",
-            "simplex-noise": "https://cdn.skypack.dev/simplex-noise@2.4.0",
-            "peerjs": "https://esm.sh/peerjs@1.5.2"
+            "simplex-noise": "https://cdn.skypack.dev/simplex-noise@2.4.0"
         }
     }
 </script>
@@ -64,93 +53,49 @@
     import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
     import * as CANNON from 'cannon-es';
     import SimplexNoise from 'simplex-noise';
-    import { Peer } from 'peerjs';
 
-    // UI
-    const mpBox = document.getElementById('mp-box');
-    document.getElementById('mp-toggle').onclick = () => mpBox.classList.toggle('open');
+    const simplex = new SimplexNoise();
+    const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5; 
+    const MASS = 6.8e14;
+    const MAX_SPEED_KMH = 650;
+    const MAX_SPEED_MS = MAX_SPEED_KMH / 3.6;
 
-    // --- TERRAIN ---
-    let simplex = new SimplexNoise();
-    const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5;
-    function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
-
-    // --- NETWORKING ---
-    const status = document.getElementById('net-status');
-    const myIdField = document.getElementById('my-id-field');
-    const peer = new Peer({ config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }]} });
-    let connections = [], remotePlayers = {};
-
-    peer.on('open', id => { 
-        myIdField.value = id; 
-        status.innerText = "Status: Online";
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('join')) setupConnection(peer.connect(urlParams.get('join')));
-    });
-
-    peer.on('connection', conn => {
-        setupConnection(conn);
-        setTimeout(() => { if(conn.open) conn.send({ t: 'seed', seed: peer.id }); }, 1000);
-    });
-
-    document.getElementById('conn-btn').onclick = () => {
-        const targetId = document.getElementById('conn-id').value.trim();
-        if (targetId) setupConnection(peer.connect(targetId));
-    };
-
-    document.getElementById('copy-link-btn').onclick = () => {
-        const invite = `${window.location.origin}${window.location.pathname}?join=${peer.id}`;
-        navigator.clipboard.writeText(invite).then(() => alert("Invite Link Copied!"));
-    };
-
-    function setupConnection(conn) {
-        conn.on('open', () => {
-            status.innerText = "Status: Connected!";
-            connections.push(conn);
-            conn.on('data', data => { 
-                if(data.t === 'u') syncRemote(conn.peer, data); 
-                if(data.t === 'seed') { simplex = new SimplexNoise(data.seed); syncTerrain(chassisBody.position.x, chassisBody.position.z); }
-            });
-        });
-    }
-
-    function syncRemote(id, data) {
-        if (!carMesh.children[0] || !wheelMeshes[0]) return;
-        if (!remotePlayers[id]) {
-            const group = new THREE.Group();
-            group.add(SkeletonUtils.clone(carMesh.children[0]));
-            const wheels = [];
-            for(let i=0; i<4; i++) {
-                const w = SkeletonUtils.clone(wheelMeshes[0]);
-                scene.add(w); wheels.push(w);
-            }
-            remotePlayers[id] = { mesh: group, wheels, tP: new THREE.Vector3(), tQ: new THREE.Quaternion() };
-            scene.add(group);
-        }
-        const r = remotePlayers[id];
-        r.tP.set(data.p.x, data.p.y, data.p.z); r.tQ.set(data.q.x, data.q.y, data.q.z, data.q.w);
-        data.w.forEach((wd, i) => { if(r.wheels[i]) { r.wheels[i].position.set(wd.p.x, wd.p.y, wd.p.z); r.wheels[i].quaternion.set(wd.q.x, wd.q.y, wd.q.z, wd.q.w); } });
-    }
-
-    // --- ENGINE ---
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000); 
+    
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 10000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
+
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = true; // Disable panning so the camera center stays on the car
+    controls.minDistance = 8; controls.maxDistance = 20;
+    
+    const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+    sun.position.set(50, 100, 50);
+    scene.add(sun, new THREE.AmbientLight(0xffffff, 0.4));
 
     const world = new CANNON.World();
-    world.gravity.set(0, -60, 0);
+    world.gravity.set(0, -150, 0); 
+    world.solver.iterations = 60; 
+
+    const groundMat = new CANNON.Material("ground"), carMat = new CANNON.Material("car");
+    world.addContactMaterial(new CANNON.ContactMaterial(groundMat, carMat, {
+        friction: 0.1, restitution: 0.0,
+        contactEquationStiffness: 1e13, contactEquationRelaxation: 5
+    }));
+
+    function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
 
     const terrainGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, DATA_RES - 1, DATA_RES - 1);
     terrainGeo.rotateX(-Math.PI / 2);
-    const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x222222, wireframe: true }));
-    scene.add(terrainMesh, new THREE.AmbientLight(0xffffff, 1.0), new THREE.DirectionalLight(0xffffff, 2));
+    const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x444444, wireframe: true }));
+    scene.add(terrainMesh);
 
     let hfBody = null;
     const elementSize = GRID_SIZE / (DATA_RES - 1);
+
     function syncTerrain(cx, cz) {
         const step = GRID_SIZE / 4; 
         const snapX = Math.floor(cx / step) * step, snapZ = Math.floor(cz / step) * step;
@@ -159,51 +104,60 @@
         for (let i = 0; i < DATA_RES; i++) {
             matrix.push(new Float32Array(DATA_RES));
             for (let j = 0; j < DATA_RES; j++) {
-                matrix[i][DATA_RES - 1 - j] = getHeight(snapX - (GRID_SIZE/2) + (i * elementSize), snapZ - (GRID_SIZE/2) + (j * elementSize));
+                const wx = snapX - (GRID_SIZE / 2) + (i * elementSize);
+                const wz = snapZ - (GRID_SIZE / 2) + (j * elementSize);
+                matrix[i][DATA_RES - 1 - j] = getHeight(wx, wz);
             }
         }
         const posAttr = terrainGeo.attributes.position;
-        for (let i = 0; i < posAttr.count; i++) { posAttr.setY(i, getHeight(posAttr.getX(i) + snapX, posAttr.getZ(i) + snapZ)); }
+        for (let i = 0; i < posAttr.count; i++) {
+            posAttr.setY(i, getHeight(posAttr.getX(i) + snapX, posAttr.getZ(i) + snapZ));
+        }
         posAttr.needsUpdate = true;
         if (hfBody) world.removeBody(hfBody);
-        hfBody = new CANNON.Body({ mass: 0 });
-        hfBody.addShape(new CANNON.Heightfield(matrix, { elementSize }));
+        hfBody = new CANNON.Body({ mass: 0, material: groundMat });
+        hfBody.addShape(new CANNON.Heightfield(matrix, { elementSize: elementSize }));
         hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         hfBody.position.set(snapX - GRID_SIZE/2, 0, snapZ + GRID_SIZE/2);
         world.addBody(hfBody);
     }
 
-    // Car Physics
-    const chassisBody = new CANNON.Body({ mass: 6.8e14, angularDamping: 0.99 });
-    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 2.3)), new CANNON.Vec3(0, 0.5, 0));
+    const chassisBody = new CANNON.Body({ mass: MASS, material: carMat });
+    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 1.15)), new CANNON.Vec3(0, 0, 1.15));
+    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 1.15)), new CANNON.Vec3(0, 0, -1.15));
     chassisBody.position.set(0, 20, 0);
+    chassisBody.angularDamping = 0.99; 
+    chassisBody.linearDamping = 0.05;
+
     const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexForwardAxis: 2, indexRightAxis: 0, indexUpAxis: 1 });
-    const wOpts = { radius: WHEEL_RADIUS, directionLocal: new CANNON.Vec3(0, -1, 0), suspensionStiffness: 200, suspensionRestLength: 1, frictionSlip: 12.0, dampingRelaxation: 5, dampingCompression: 10, axleLocal: new CANNON.Vec3(-1, 0, 0) };
-    
-    // SUSPENSION GEOMETRY FIXED
-    [[1.2, 0.1, 1.6], [-1.2, 0.1, 1.6], [1.2, 0.1, -1.725], [-1.2, 0.1, -1.725]].forEach(p => { 
-        wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p); 
-        vehicle.addWheel(wOpts); 
+    const wOpts = { radius: WHEEL_RADIUS, directionLocal: new CANNON.Vec3(0, -1, 0), suspensionStiffness: 500, suspensionRestLength: 1.1, frictionSlip: 50.0, dampingRelaxation: 20, dampingCompression: 15, axleLocal: new CANNON.Vec3(-1, 0, 0) };
+    [[1.2, 0, 1.6], [-1.2, 0, 1.6], [1.2, 0, -1.725], [-1.2, 0, -1.725]].forEach(p => {
+        wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p);
+        vehicle.addWheel(wOpts);
     });
     vehicle.addToWorld(world);
 
-    // Meshes
-    const carMesh = new THREE.Group(); scene.add(carMesh);
-    const wheelMeshes = [];
+    const carMesh = new THREE.Group();
+    scene.add(carMesh);
     const loader = new GLTFLoader();
-    loader.load('https://raw.githubusercontent.com/moo2645m/car-glb/main/scene.glb', g => { g.scene.scale.set(3,3,3); carMesh.add(g.scene); });
-    loader.load('https://raw.githubusercontent.com/moo2645m/wheel-glb/main/Tire.glb', g => { 
-        for(let i=0; i<4; i++) { const w = SkeletonUtils.clone(g.scene); w.scale.set(0.4, 0.4, 0.4); scene.add(w); wheelMeshes[i] = w; }
+    loader.load('https://raw.githubusercontent.com/moo2645m/car-glb/main/scene.glb', (gltf) => {
+        gltf.scene.scale.set(3, 3, 3); gltf.scene.position.set(0, -0.5, 0.2);
+        carMesh.add(gltf.scene);
     });
 
-    const rings = [];
-    const ringGeo = new THREE.RingGeometry(1, 1.2, 32);
-    for(let i=0; i<32; i++){
-        const mesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide }));
-        scene.add(mesh); rings.push({ mesh, scale: 1, active: false });
-    }
+    const wheelMeshes = [];
+    loader.load('https://raw.githubusercontent.com/moo2645m/wheel-glb/main/Tire.glb', (gltf) => {
+        const tireSource = gltf.scene;
+        const s = WHEEL_RADIUS * 0.8;
+        tireSource.scale.set(s, s, s); 
+        for (let i = 0; i < 4; i++) {
+            const wheelGroup = new THREE.Group();
+            wheelGroup.add(SkeletonUtils.clone(tireSource));
+            scene.add(wheelGroup);
+            wheelMeshes[i] = wheelGroup;
+        }
+    });
 
-    // Input Logic
     let drive = { throttle: 0, steer: 0, brake: false }, joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper'), activePtr = null;
     joyW.onpointerdown = e => { activePtr = e.pointerId; handleJoy(e); };
     window.onpointermove = e => { if(e.pointerId === activePtr) handleJoy(e); };
@@ -213,89 +167,70 @@
         let dx = e.clientX - (r.left + 50), dy = e.clientY - (r.top + 50);
         const d = Math.min(Math.sqrt(dx*dx + dy*dy), 45);
         if (d > 0) {
-            joyK.style.transform = `translate(${(dx/Math.sqrt(dx*dx+dy*dy))*d}px, ${(dy/Math.sqrt(dx*dx+dy*dy))*d}px)`;
+            const mag = Math.sqrt(dx*dx+dy*dy);
+            joyK.style.transform = `translate(${(dx/mag)*d}px, ${(dy/mag)*d}px)`;
             drive.throttle = -dy/45; drive.steer = -dx/45;
         }
     }
     document.getElementById('brake-btn').onpointerdown = () => drive.brake = true;
     window.addEventListener('pointerup', () => drive.brake = false);
-    document.getElementById('reset-btn').onclick = () => { chassisBody.position.y += 10; chassisBody.quaternion.set(0,0,0,1); chassisBody.velocity.set(0,0,0); };
 
-    // --- LOOP ---
-    const clock = new THREE.Clock();
-    let lastSync = 0, lastUpdatePos = new THREE.Vector3(), boomTimer = 0;
-    const offset = new THREE.Vector3();
+    const clock = new THREE.Clock(), prevPos = new THREE.Vector3();
+    let lastUpdatePos = new THREE.Vector3(0,0,0), easedBrake = 0;
 
-    function animate(now) {
+    function animate() {
         requestAnimationFrame(animate);
-        const dt = clock.getDelta();
-        for (let i = 0; i < 60; i++) { world.step(1/3600); }
+        const delta = clock.getDelta();
+        const speed = vehicle.currentVehicleSpeedKmHour, absSpeed = Math.abs(speed);
 
-        const speed = vehicle.currentVehicleSpeedKmHour;
-        const absSpeed = Math.abs(speed);
-
-        vehicle.applyEngineForce(drive.throttle * 2.8e15, 2);
-        vehicle.applyEngineForce(drive.throttle * 2.8e15, 3);
-        vehicle.setSteeringValue(drive.steer * -0.5, 0);
-        vehicle.setSteeringValue(drive.steer * -0.5, 1);
-
-        if (drive.brake) {
-            const v = chassisBody.velocity;
-            if (v.length() > 0.27) { v.normalize(); v.scale(v.length() - 0.27, v); }
-            else v.set(0,0,0);
-        }
-
-        // Safety Floor
-        const floorY = getHeight(chassisBody.position.x, chassisBody.position.z);
-        if (chassisBody.position.y < floorY + 0.5) { chassisBody.position.y = floorY + 0.5; chassisBody.velocity.y = Math.max(0, chassisBody.velocity.y); }
-
-        // Effects
-        if (absSpeed > 1225) {
-            boomTimer += dt;
-            if (boomTimer > 0.03) {
-                const r = rings.find(r => !r.active) || rings[0];
-                r.mesh.position.copy(chassisBody.position); r.mesh.quaternion.copy(chassisBody.quaternion);
-                r.scale = 1.2; r.mesh.material.opacity = 0.6; r.active = true; boomTimer = 0;
+        const subSteps = 30; 
+        const timeStep = 1 / (60 * subSteps); 
+        for (let i = 0; i < subSteps; i++) {
+            world.step(timeStep);
+            const v = chassisBody.velocity.length();
+            if (v > MAX_SPEED_MS) {
+                chassisBody.velocity.normalize();
+                chassisBody.velocity.scale(MAX_SPEED_MS, chassisBody.velocity);
             }
         }
-        rings.forEach(r => { if(r.active) { r.scale += 50 * dt; r.mesh.scale.set(r.scale, r.scale, r.scale); r.mesh.material.opacity -= 0.9 * dt; if(r.mesh.material.opacity <= 0) r.active = false; } });
 
-        // Update Car Visuals
+        const engineForce = (absSpeed < MAX_SPEED_KMH) ? drive.throttle * 4.1e15 : 0;
+        const targetBrake = drive.brake ? (MASS * (absSpeed / 3.6)) / 2.0 : 0;
+        const easeFactor = drive.brake ? 0.00005 : 0.1;
+        easedBrake += (targetBrake - easedBrake) * easeFactor;
+
+        for(let i=0; i<4; i++) {
+            vehicle.applyEngineForce(engineForce, i);
+            vehicle.setBrake(easedBrake / 4, i);
+        }
+        
+        // STATIC WEAK STEERING (Locked at 0.08)
+        const steerStrength = 0.08;
+        vehicle.setSteeringValue(drive.steer * steerStrength, 2);
+        vehicle.setSteeringValue(drive.steer * steerStrength, 3);
+
         carMesh.position.copy(chassisBody.position); carMesh.quaternion.copy(chassisBody.quaternion);
-        vehicle.wheelInfos.forEach((w, i) => {
-            vehicle.updateWheelTransform(i);
+        vehicle.wheelInfos.forEach((w, i) => { 
+            vehicle.updateWheelTransform(i); 
             if (wheelMeshes[i]) {
-                wheelMeshes[i].position.copy(w.worldTransform.position);
-                wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion);
-                wheelMeshes[i].rotateX((speed * dt) / WHEEL_RADIUS);
+                wheelMeshes[i].position.copy(w.worldTransform.position); 
+                wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion); 
+                wheelMeshes[i].children[0].rotateX((speed * delta) / WHEEL_RADIUS * 0.1 * ((i >= 2) ? -1 : 1));
             }
         });
 
-        // NETWORK
-        if (now - lastSync > 50 && connections.length > 0) {
-            connections.forEach(c => c.send({ t: 'u', p: chassisBody.position, q: chassisBody.quaternion, w: vehicle.wheelInfos.map(wi => ({ p: wi.worldTransform.position, q: wi.worldTransform.quaternion })) }));
-            lastSync = now;
-        }
-        for (let id in remotePlayers) {
-            remotePlayers[id].mesh.position.lerp(remotePlayers[id].tP, 0.3);
-            remotePlayers[id].mesh.quaternion.slerp(remotePlayers[id].tQ, 0.3);
-        }
-
-        // CAMERA FOLLOW (AUTOMATIC)
-        // Store current distance from target, move camera with the car, then point back at target
-        offset.copy(camera.position).sub(controls.target);
-        controls.target.copy(chassisBody.position);
-        camera.position.copy(controls.target).add(offset);
-
         if (chassisBody.position.distanceTo(lastUpdatePos) > 200) { syncTerrain(chassisBody.position.x, chassisBody.position.z); lastUpdatePos.copy(chassisBody.position); }
         
-        document.getElementById('speed-val').innerText = Math.round(absSpeed).toLocaleString();
-        document.getElementById('pos-val').innerText = `${Math.round(chassisBody.position.x)}, ${Math.round(chassisBody.position.z)}`;
+        camera.fov = 70 + (absSpeed / 40); camera.updateProjectionMatrix();
+        camera.position.add(new THREE.Vector3().subVectors(chassisBody.position, prevPos));
+        controls.target.copy(chassisBody.position);
+        prevPos.copy(chassisBody.position);
         
-        controls.update();
-        renderer.render(scene, camera);
+        document.getElementById('speed-val').innerText = Math.round(absSpeed).toLocaleString();
+        
+        controls.update(); renderer.render(scene, camera);
     }
-    syncTerrain(0,0); animate(0);
+    syncTerrain(0, 0); animate();
 </script>
 </body>
 </html>
