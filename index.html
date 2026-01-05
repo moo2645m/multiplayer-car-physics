@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan | Advanced MP</title>
+    <title>Red Sedan | Physics Fixed</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
         #joystick-wrapper {
@@ -27,11 +27,20 @@
             padding: 12px; border-radius: 4px; font-size: 12px; border-left: 3px solid #ff0000; 
             pointer-events: none; line-height: 1.6;
         }
+        
+        /* COLLAPSIBLE MP BOX */
         #mp-box { 
-            position: absolute; top: 20px; right: 90px; background: rgba(0,0,0,0.95); padding: 10px; 
-            color: white; font-size: 10px; border: 1px solid #444; z-index: 20; pointer-events: auto;
+            position: absolute; top: 20px; right: 90px; background: rgba(0,0,0,0.95); padding: 0; 
+            color: white; font-size: 10px; border: 1px solid #444; z-index: 20; 
+            overflow: hidden; transition: height 0.3s ease; height: 30px; width: 160px;
         }
-        #mp-box input { background: #111; border: 1px solid #555; color: white; width: 140px; font-size: 10px; padding: 4px; margin-bottom: 5px; font-family: monospace; }
+        #mp-box.open { height: 210px; }
+        #mp-toggle { 
+            background: #222; padding: 8px; cursor: pointer; text-align: center; 
+            font-weight: bold; border-bottom: 1px solid #444; color: #0f0;
+        }
+        #mp-content { padding: 10px; }
+        #mp-box input { background: #111; border: 1px solid #555; color: white; width: 130px; font-size: 10px; padding: 4px; margin-bottom: 5px; font-family: monospace; }
         #mp-box button { cursor: pointer; background: #333; color: white; border: 1px solid #666; width: 100%; padding: 5px; margin-bottom: 5px; font-weight: bold;}
         #net-status { color: #00ff00; font-size: 9px; margin-top: 5px; text-transform: uppercase; }
     </style>
@@ -39,23 +48,26 @@
 <body>
 
 <div id="mp-box">
-    ID:<br>
-    <input type="text" id="my-id-field" value="Connecting..." readonly onclick="this.select()">
-    <button id="copy-link-btn">COPY INVITE LINK</button>
-    <hr style="border:0; border-top:1px solid #333">
-    JOIN ID:<br>
-    <input type="text" id="conn-id" placeholder="Paste ID here">
-    <button id="conn-btn" style="background:#b00">MANUAL JOIN</button>
-    <div id="net-status">Status: Initializing</div>
+    <div id="mp-toggle">NETWORK [+/-]</div>
+    <div id="mp-content">
+        ID:<br>
+        <input type="text" id="my-id-field" value="Connecting..." readonly onclick="this.select()">
+        <button id="copy-link-btn">COPY INVITE LINK</button>
+        <hr style="border:0; border-top:1px solid #333">
+        JOIN ID:<br>
+        <input type="text" id="conn-id" placeholder="Paste ID here">
+        <button id="conn-btn" style="background:#b00">MANUAL JOIN</button>
+        <div id="net-status">Status: Initializing</div>
+    </div>
 </div>
 
 <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
 <div id="brake-btn">BRAKE</div>
 <div id="reset-btn">RESET</div>
 <div id="ui">
-    RED SEDAN | ADVANCED<br>
+    RED SEDAN | V2.1<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
-    POS: <span id="pos-val">0, 0, 0</span>
+    POS: <span id="pos-val">0, 0</span>
 </div>
 
 <script type="importmap">
@@ -79,6 +91,10 @@
     import SimplexNoise from 'simplex-noise';
     import { Peer } from 'peerjs';
 
+    // UI COLLAPSE LOGIC
+    const mpBox = document.getElementById('mp-box');
+    document.getElementById('mp-toggle').onclick = () => mpBox.classList.toggle('open');
+
     // --- SEED SYNC TERRAIN ---
     let simplex = new SimplexNoise();
     const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5;
@@ -101,6 +117,16 @@
         setupConnection(conn);
         setTimeout(() => { if(conn.open) conn.send({ t: 'seed', seed: peer.id }); }, 1000);
     });
+
+    document.getElementById('conn-btn').onclick = () => {
+        const targetId = document.getElementById('conn-id').value.trim();
+        if (targetId) setupConnection(peer.connect(targetId));
+    };
+
+    document.getElementById('copy-link-btn').onclick = () => {
+        const invite = `${window.location.origin}${window.location.pathname}?join=${peer.id}`;
+        navigator.clipboard.writeText(invite).then(() => alert("Invite Link Copied!"));
+    };
 
     function setupConnection(conn) {
         conn.on('open', () => {
@@ -212,11 +238,11 @@
         }
     }
     document.getElementById('brake-btn').onpointerdown = () => drive.brake = true;
-    window.onpointerup = () => drive.brake = false;
+    window.addEventListener('pointerup', () => drive.brake = false);
     document.getElementById('reset-btn').onclick = () => { chassisBody.position.y += 10; chassisBody.quaternion.set(0,0,0,1); chassisBody.velocity.set(0,0,0); };
 
     // ANIMATE
-    const clock = new THREE.Clock(), prevPos = new THREE.Vector3();
+    const clock = new THREE.Clock();
     let lastSync = 0, lastUpdatePos = new THREE.Vector3(), boomTimer = 0;
 
     function animate(now) {
