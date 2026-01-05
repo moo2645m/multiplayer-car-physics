@@ -3,42 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan | Physics Fixed</title>
+    <title>Red Sedan | Camera Locked</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
-        #joystick-wrapper {
-            position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px;
-            background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
-            display: flex; align-items: center; justify-content: center; z-index: 10;
-        }
+        #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 10; }
         #joystick-knob { width: 40px; height: 40px; background: #ff0000; border-radius: 50%; position: absolute; pointer-events: none; }
-        #brake-btn {
-            position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px;
-            background: rgba(255,0,0,0.2); border: 2px solid #ff0000; border-radius: 12px;
-            color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10;
-        }
-        #reset-btn {
-            position: absolute; top: 20px; right: 20px; width: 60px; height: 40px;
-            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.5); border-radius: 4px;
-            color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 10; cursor: pointer;
-        }
-        #ui {
-            position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8);
-            padding: 12px; border-radius: 4px; font-size: 12px; border-left: 3px solid #ff0000; 
-            pointer-events: none; line-height: 1.6;
-        }
-        
-        /* COLLAPSIBLE MP BOX */
-        #mp-box { 
-            position: absolute; top: 20px; right: 90px; background: rgba(0,0,0,0.95); padding: 0; 
-            color: white; font-size: 10px; border: 1px solid #444; z-index: 20; 
-            overflow: hidden; transition: height 0.3s ease; height: 30px; width: 160px;
-        }
+        #brake-btn { position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px; background: rgba(255,0,0,0.2); border: 2px solid #ff0000; border-radius: 12px; color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        #reset-btn { position: absolute; top: 20px; right: 20px; width: 60px; height: 40px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.5); border-radius: 4px; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 10; cursor: pointer; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 4px; font-size: 12px; border-left: 3px solid #ff0000; pointer-events: none; line-height: 1.6; }
+        #mp-box { position: absolute; top: 20px; right: 90px; background: rgba(0,0,0,0.95); padding: 0; color: white; font-size: 10px; border: 1px solid #444; z-index: 20; overflow: hidden; transition: height 0.3s ease; height: 30px; width: 160px; }
         #mp-box.open { height: 210px; }
-        #mp-toggle { 
-            background: #222; padding: 8px; cursor: pointer; text-align: center; 
-            font-weight: bold; border-bottom: 1px solid #444; color: #0f0;
-        }
+        #mp-toggle { background: #222; padding: 8px; cursor: pointer; text-align: center; font-weight: bold; border-bottom: 1px solid #444; color: #0f0; }
         #mp-content { padding: 10px; }
         #mp-box input { background: #111; border: 1px solid #555; color: white; width: 130px; font-size: 10px; padding: 4px; margin-bottom: 5px; font-family: monospace; }
         #mp-box button { cursor: pointer; background: #333; color: white; border: 1px solid #666; width: 100%; padding: 5px; margin-bottom: 5px; font-weight: bold;}
@@ -65,7 +40,7 @@
 <div id="brake-btn">BRAKE</div>
 <div id="reset-btn">RESET</div>
 <div id="ui">
-    RED SEDAN | V2.1<br>
+    RED SEDAN | V2.2<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
     POS: <span id="pos-val">0, 0</span>
 </div>
@@ -91,11 +66,11 @@
     import SimplexNoise from 'simplex-noise';
     import { Peer } from 'peerjs';
 
-    // UI COLLAPSE LOGIC
+    // UI
     const mpBox = document.getElementById('mp-box');
     document.getElementById('mp-toggle').onclick = () => mpBox.classList.toggle('open');
 
-    // --- SEED SYNC TERRAIN ---
+    // --- TERRAIN ---
     let simplex = new SimplexNoise();
     const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5;
     function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
@@ -157,13 +132,14 @@
         data.w.forEach((wd, i) => { if(r.wheels[i]) { r.wheels[i].position.set(wd.p.x, wd.p.y, wd.p.z); r.wheels[i].quaternion.set(wd.q.x, wd.q.y, wd.q.z, wd.q.w); } });
     }
 
-    // --- CORE ENGINE ---
+    // --- ENGINE ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 10000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = false; // Disable panning so the camera center stays on the car
 
     const world = new CANNON.World();
     world.gravity.set(0, -60, 0);
@@ -197,16 +173,21 @@
         world.addBody(hfBody);
     }
 
-    // Physics Car
+    // Car Physics
     const chassisBody = new CANNON.Body({ mass: 6.8e14, angularDamping: 0.99 });
     chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 2.3)), new CANNON.Vec3(0, 0.5, 0));
     chassisBody.position.set(0, 20, 0);
     const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexForwardAxis: 2, indexRightAxis: 0, indexUpAxis: 1 });
     const wOpts = { radius: WHEEL_RADIUS, directionLocal: new CANNON.Vec3(0, -1, 0), suspensionStiffness: 200, suspensionRestLength: 1, frictionSlip: 12.0, dampingRelaxation: 5, dampingCompression: 10, axleLocal: new CANNON.Vec3(-1, 0, 0) };
-    [[1.2, 0.1, 1.6], [-1.2, 0.1, 1.6], [1.2, 0.1, -1.725], [-1.2, 0.1, -1.725]].forEach(p => { wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p); vehicle.addWheel(wOpts); });
+    
+    // SUSPENSION GEOMETRY FIXED
+    [[1.2, 0.1, 1.6], [-1.2, 0.1, 1.6], [1.2, 0.1, -1.725], [-1.2, 0.1, -1.725]].forEach(p => { 
+        wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p); 
+        vehicle.addWheel(wOpts); 
+    });
     vehicle.addToWorld(world);
 
-    // Models
+    // Meshes
     const carMesh = new THREE.Group(); scene.add(carMesh);
     const wheelMeshes = [];
     const loader = new GLTFLoader();
@@ -215,7 +196,6 @@
         for(let i=0; i<4; i++) { const w = SkeletonUtils.clone(g.scene); w.scale.set(0.4, 0.4, 0.4); scene.add(w); wheelMeshes[i] = w; }
     });
 
-    // Sonic Boom System
     const rings = [];
     const ringGeo = new THREE.RingGeometry(1, 1.2, 32);
     for(let i=0; i<32; i++){
@@ -223,7 +203,7 @@
         scene.add(mesh); rings.push({ mesh, scale: 1, active: false });
     }
 
-    // Input
+    // Input Logic
     let drive = { throttle: 0, steer: 0, brake: false }, joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper'), activePtr = null;
     joyW.onpointerdown = e => { activePtr = e.pointerId; handleJoy(e); };
     window.onpointermove = e => { if(e.pointerId === activePtr) handleJoy(e); };
@@ -241,9 +221,10 @@
     window.addEventListener('pointerup', () => drive.brake = false);
     document.getElementById('reset-btn').onclick = () => { chassisBody.position.y += 10; chassisBody.quaternion.set(0,0,0,1); chassisBody.velocity.set(0,0,0); };
 
-    // ANIMATE
+    // --- LOOP ---
     const clock = new THREE.Clock();
     let lastSync = 0, lastUpdatePos = new THREE.Vector3(), boomTimer = 0;
+    const offset = new THREE.Vector3();
 
     function animate(now) {
         requestAnimationFrame(animate);
@@ -253,7 +234,6 @@
         const speed = vehicle.currentVehicleSpeedKmHour;
         const absSpeed = Math.abs(speed);
 
-        // Physics Forces
         vehicle.applyEngineForce(drive.throttle * 2.8e15, 2);
         vehicle.applyEngineForce(drive.throttle * 2.8e15, 3);
         vehicle.setSteeringValue(drive.steer * -0.5, 0);
@@ -269,7 +249,7 @@
         const floorY = getHeight(chassisBody.position.x, chassisBody.position.z);
         if (chassisBody.position.y < floorY + 0.5) { chassisBody.position.y = floorY + 0.5; chassisBody.velocity.y = Math.max(0, chassisBody.velocity.y); }
 
-        // Sonic Boom
+        // Effects
         if (absSpeed > 1225) {
             boomTimer += dt;
             if (boomTimer > 0.03) {
@@ -280,18 +260,18 @@
         }
         rings.forEach(r => { if(r.active) { r.scale += 50 * dt; r.mesh.scale.set(r.scale, r.scale, r.scale); r.mesh.material.opacity -= 0.9 * dt; if(r.mesh.material.opacity <= 0) r.active = false; } });
 
-        // Sync Meshes
+        // Update Car Visuals
         carMesh.position.copy(chassisBody.position); carMesh.quaternion.copy(chassisBody.quaternion);
         vehicle.wheelInfos.forEach((w, i) => {
             vehicle.updateWheelTransform(i);
             if (wheelMeshes[i]) {
                 wheelMeshes[i].position.copy(w.worldTransform.position);
                 wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion);
-                // FIXED ROTATION FOR ALL 4 WHEELS
                 wheelMeshes[i].rotateX((speed * dt) / WHEEL_RADIUS);
             }
         });
 
+        // NETWORK
         if (now - lastSync > 50 && connections.length > 0) {
             connections.forEach(c => c.send({ t: 'u', p: chassisBody.position, q: chassisBody.quaternion, w: vehicle.wheelInfos.map(wi => ({ p: wi.worldTransform.position, q: wi.worldTransform.quaternion })) }));
             lastSync = now;
@@ -301,10 +281,18 @@
             remotePlayers[id].mesh.quaternion.slerp(remotePlayers[id].tQ, 0.3);
         }
 
-        if (chassisBody.position.distanceTo(lastUpdatePos) > 200) { syncTerrain(chassisBody.position.x, chassisBody.position.z); lastUpdatePos.copy(chassisBody.position); }
+        // CAMERA FOLLOW (AUTOMATIC)
+        // Store current distance from target, move camera with the car, then point back at target
+        offset.copy(camera.position).sub(controls.target);
         controls.target.copy(chassisBody.position);
+        camera.position.copy(controls.target).add(offset);
+
+        if (chassisBody.position.distanceTo(lastUpdatePos) > 200) { syncTerrain(chassisBody.position.x, chassisBody.position.z); lastUpdatePos.copy(chassisBody.position); }
+        
         document.getElementById('speed-val').innerText = Math.round(absSpeed).toLocaleString();
         document.getElementById('pos-val').innerText = `${Math.round(chassisBody.position.x)}, ${Math.round(chassisBody.position.z)}`;
+        
+        controls.update();
         renderer.render(scene, camera);
     }
     syncTerrain(0,0); animate(0);
