@@ -3,38 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>The Dream: Red Sedan</title>
+    <title>Red Sedan V4.5.4</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
-        #joystick-wrapper {
-            position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px;
-            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
-            display: flex; align-items: center; justify-content: center; z-index: 10;
-        }
+        #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; z-index: 10; display: flex; align-items: center; justify-content: center; }
         #joystick-knob { width: 40px; height: 40px; background: #ff0000; border-radius: 50%; position: absolute; pointer-events: none; }
-        #brake-btn {
-            position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px;
-            background: rgba(255,0,0,0.1); border: 1px solid #ff0000; border-radius: 12px;
-            color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10;
-        }
-        #ui {
-            position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.9);
-            padding: 12px; border-radius: 4px; font-size: 11px; border-left: 2px solid #ff0000; 
-            pointer-events: none; line-height: 1.6; letter-spacing: 1px;
-        }
+        #brake-btn { position: absolute; bottom: 40px; right: 40px; width: 80px; height: 80px; background: rgba(255,0,0,0.2); border: 2px solid #ff0000; border-radius: 12px; color: #ff0000; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        #mp-panel { position: absolute; top: 20px; right: 20px; width: 250px; background: rgba(0,0,0,0.9); border: 1px solid #444; color: #fff; z-index: 20; border-radius: 4px; overflow: hidden; }
+        #mp-header { background: #ff0000; color: #000; padding: 8px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; }
+        #mp-content { padding: 12px; display: none; flex-direction: column; gap: 10px; }
+        #mp-content.open { display: flex; }
+        input { background: #111; border: 1px solid #444; color: #ff0000; padding: 5px; font-family: monospace; outline: none; width: calc(100% - 12px); }
+        .btn { background: #222; border: 1px solid #ff0000; color: #fff; padding: 5px; cursor: pointer; text-align: center; font-size: 11px; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.9); padding: 12px; border-radius: 4px; font-size: 11px; border-left: 2px solid #ff0000; pointer-events: none; z-index: 5; }
     </style>
 </head>
 <body>
 
+<div id="mp-panel">
+    <div id="mp-header" onclick="document.getElementById('mp-content').classList.toggle('open')">
+        <span>RED SEDAN MULTIPLAYER</span>
+        <span>▼</span>
+    </div>
+    <div id="mp-content">
+        <label>USERNAME:</label>
+        <input type="text" id="username-in" maxlength="24">
+        <hr style="border:0; border-top:1px solid #333; width:100%">
+        <label>JOIN PEER ID:</label>
+        <input type="text" id="join-seed" placeholder="Paste Peer ID here...">
+        <div class="btn" onclick="connectToPeer()">JOIN SESSION</div>
+        <div id="conn-status" style="font-size:9px; color:#ff0000">Status: Offline</div>
+        <div id="peer-id-display" style="font-size:9px; color:#ff0000; margin-top:5px; word-break:break-all; cursor:pointer" onclick="copyMyId()">MY ID: Generating...</div>
+    </div>
+</div>
+
 <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
 <div id="brake-btn">BRAKE</div>
 <div id="ui">
-    RED SEDAN | V3.5.6<br>
+    RED SEDAN | V4.5.4<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
-    STEERING: STATIC WEAK (0.08)<br>
-    ENGINE: 4.1e15 | MODE: STABLE
+    X: <span id="pos-x">0</span><br>
+    Z: <span id="pos-z">0</span><br>
+    STABILITY: <span id="recovery-status">ACTIVE</span>
 </div>
 
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script type="importmap">
     {
         "imports": {
@@ -54,40 +67,38 @@
     import * as CANNON from 'cannon-es';
     import SimplexNoise from 'simplex-noise';
 
-    const simplex = new SimplexNoise();
     const DATA_RES = 1024, GRID_SIZE = 1200, AMPLITUDE = 40, FREQ = 0.0015, WHEEL_RADIUS = 0.5; 
-    const MASS = 6.8e14;
-    const MAX_SPEED_KMH = 650;
-    const MAX_SPEED_MS = MAX_SPEED_KMH / 3.6;
+    const MASS = 6.8e14, MAX_SPEED_KMH = 650;
+    
+    const Assets = { car: null, wheel: null };
+    const randomSuffix = Math.floor(Math.random() * 99999) + 1;
+    document.getElementById('username-in').value = "Driver" + randomSuffix.toString().padStart(5, '0');
+
+    let currentWorldSeed = Math.floor(1000 + Math.random() * 9000);
+    let simplex = new SimplexNoise(currentWorldSeed);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000); 
-    
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 10000);
+    scene.background = new THREE.Color(0x000000);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 15000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
     document.body.appendChild(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.minDistance = 8; controls.maxDistance = 20;
-    
     const sun = new THREE.DirectionalLight(0xffffff, 2.5);
     sun.position.set(50, 100, 50);
     scene.add(sun, new THREE.AmbientLight(0xffffff, 0.4));
 
     const world = new CANNON.World();
-    world.gravity.set(0, -150, 0); 
-    world.solver.iterations = 60; 
+    world.gravity.set(0, -150, 0);
+    world.solver.iterations = 100;
 
     const groundMat = new CANNON.Material("ground"), carMat = new CANNON.Material("car");
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, carMat, {
-        friction: 0.1, restitution: 0.0,
-        contactEquationStiffness: 1e13, contactEquationRelaxation: 5
+        friction: 0.1, restitution: 0.0, contactEquationStiffness: 1e20, contactEquationRelaxation: 5
     }));
 
     function getHeight(x, z) { return simplex.noise2D(x * FREQ, z * FREQ) * AMPLITUDE; }
-
     const terrainGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, DATA_RES - 1, DATA_RES - 1);
     terrainGeo.rotateX(-Math.PI / 2);
     const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x444444, wireframe: true }));
@@ -95,7 +106,6 @@
 
     let hfBody = null;
     const elementSize = GRID_SIZE / (DATA_RES - 1);
-
     function syncTerrain(cx, cz) {
         const step = GRID_SIZE / 4; 
         const snapX = Math.floor(cx / step) * step, snapZ = Math.floor(cz / step) * step;
@@ -106,13 +116,11 @@
             for (let j = 0; j < DATA_RES; j++) {
                 const wx = snapX - (GRID_SIZE / 2) + (i * elementSize);
                 const wz = snapZ - (GRID_SIZE / 2) + (j * elementSize);
-                matrix[i][DATA_RES - 1 - j] = getHeight(wx, wz);
+                matrix[i][DATA_RES - 1 - j] = getHeight(wx, wz) + 0.1; 
             }
         }
         const posAttr = terrainGeo.attributes.position;
-        for (let i = 0; i < posAttr.count; i++) {
-            posAttr.setY(i, getHeight(posAttr.getX(i) + snapX, posAttr.getZ(i) + snapZ));
-        }
+        for (let i = 0; i < posAttr.count; i++) posAttr.setY(i, getHeight(posAttr.getX(i) + snapX, posAttr.getZ(i) + snapZ));
         posAttr.needsUpdate = true;
         if (hfBody) world.removeBody(hfBody);
         hfBody = new CANNON.Body({ mass: 0, material: groundMat });
@@ -123,114 +131,220 @@
     }
 
     const chassisBody = new CANNON.Body({ mass: MASS, material: carMat });
-    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 1.15)), new CANNON.Vec3(0, 0, 1.15));
-    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.2, 0.4, 1.15)), new CANNON.Vec3(0, 0, -1.15));
+    chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(1.4, 0.8, 2.8)));
     chassisBody.position.set(0, 20, 0);
-    chassisBody.angularDamping = 0.99; 
+    chassisBody.angularDamping = 0.95;
     chassisBody.linearDamping = 0.05;
 
     const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexForwardAxis: 2, indexRightAxis: 0, indexUpAxis: 1 });
     const wOpts = { radius: WHEEL_RADIUS, directionLocal: new CANNON.Vec3(0, -1, 0), suspensionStiffness: 500, suspensionRestLength: 1.1, frictionSlip: 50.0, dampingRelaxation: 20, dampingCompression: 15, axleLocal: new CANNON.Vec3(-1, 0, 0) };
-    [[1.2, 0, 1.6], [-1.2, 0, 1.6], [1.2, 0, -1.725], [-1.2, 0, -1.725]].forEach(p => {
-        wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p);
-        vehicle.addWheel(wOpts);
-    });
+    [[1.2, 0, 1.6], [-1.2, 0, 1.6], [1.2, 0, -1.725], [-1.2, 0, -1.725]].forEach(p => { wOpts.chassisConnectionPointLocal = new CANNON.Vec3(...p); vehicle.addWheel(wOpts); });
     vehicle.addToWorld(world);
 
-    const carMesh = new THREE.Group();
-    scene.add(carMesh);
+    // Collision Points for Terrain Detection
+    const collisionPoints = [];
+    for (let z = -2.8; z <= 2.8; z += 1.4) for (let x = -1.4; x <= 1.4; x += 1.4) for (let y = -0.8; y <= 0.8; y += 0.4) collisionPoints.push(new CANNON.Vec3(x, y, z));
+
+    const localCarMesh = new THREE.Group();
+    scene.add(localCarMesh);
+    
+    let chassisList, wheelList;
+    const MAX_GHOSTS = 100;
+    const instMatrix = new THREE.Matrix4();
+    const invisibleMatrix = new THREE.Matrix4().set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+    const _v3 = new THREE.Vector3(), _q = new THREE.Quaternion(), _sCar = new THREE.Vector3(3, 3, 3), _sWheel = new THREE.Vector3(0.4, 0.4, 0.4);
+
     const loader = new GLTFLoader();
+    const wheelMeshes = [];
+
     loader.load('https://raw.githubusercontent.com/moo2645m/car-glb/main/scene.glb', (gltf) => {
-        gltf.scene.scale.set(3, 3, 3); gltf.scene.position.set(0, -0.5, 0.2);
-        carMesh.add(gltf.scene);
+        let extMesh; gltf.scene.traverse(c => { if(c.isMesh && !extMesh) extMesh = c; });
+        if(extMesh) {
+            chassisList = new THREE.InstancedMesh(extMesh.geometry, extMesh.material, MAX_GHOSTS);
+            for(let i=0; i<MAX_GHOSTS; i++) chassisList.setMatrixAt(i, invisibleMatrix);
+            scene.add(chassisList);
+        }
+        Assets.car = gltf.scene; Assets.car.scale.set(3,3,3); Assets.car.position.set(0, -0.5, 0.2);
+        localCarMesh.add(SkeletonUtils.clone(Assets.car));
     });
 
-    const wheelMeshes = [];
     loader.load('https://raw.githubusercontent.com/moo2645m/wheel-glb/main/Tire.glb', (gltf) => {
-        const tireSource = gltf.scene;
-        const s = WHEEL_RADIUS * 0.8;
-        tireSource.scale.set(s, s, s); 
+        let extMesh; gltf.scene.traverse(c => { if(c.isMesh && !extMesh) extMesh = c; });
+        if(extMesh) {
+            wheelList = new THREE.InstancedMesh(extMesh.geometry, extMesh.material, MAX_GHOSTS * 4);
+            for(let i=0; i<MAX_GHOSTS*4; i++) wheelList.setMatrixAt(i, invisibleMatrix);
+            scene.add(wheelList);
+        }
+        Assets.wheel = gltf.scene;
         for (let i = 0; i < 4; i++) {
-            const wheelGroup = new THREE.Group();
-            wheelGroup.add(SkeletonUtils.clone(tireSource));
-            scene.add(wheelGroup);
-            wheelMeshes[i] = wheelGroup;
+            const wGroup = new THREE.Group();
+            const wModel = SkeletonUtils.clone(Assets.wheel);
+            wModel.scale.set(WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8);
+            wGroup.add(wModel);
+            scene.add(wGroup);
+            wheelMeshes[i] = wGroup;
         }
     });
 
-    let drive = { throttle: 0, steer: 0, brake: false }, joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper'), activePtr = null;
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.minDistance = 8; orbit.maxDistance = 20;
+
+    let peer, myId, connections = {}, remotePlayers = {};
+    const usernameInput = document.getElementById('username-in');
+
+    function initMultiplayer() {
+        peer = new Peer({ debug: 1 });
+        peer.on('open', (id) => { myId = id; document.getElementById('peer-id-display').innerText = "MY ID: " + id; });
+        peer.on('connection', (conn) => setupConn(conn, false));
+    }
+
+    function setupConn(conn, isJoiner) {
+        conn.on('open', () => {
+            connections[conn.peer] = conn;
+            if(isJoiner) conn.send({ type: 'REQ_SEED' });
+        });
+        conn.on('data', (d) => { 
+            if(d.type === 'REQ_SEED') conn.send({ type: 'SYNC_SEED', seed: currentWorldSeed });
+            if(d.type === 'SYNC_SEED') { currentWorldSeed = d.seed; simplex = new SimplexNoise(d.seed); syncTerrain(0,0); }
+            if(d.p) updateRemote(conn.peer, d); 
+        });
+        const cleanup = () => {
+            if (remotePlayers[conn.peer]) {
+                const idx = remotePlayers[conn.peer].idx;
+                if(chassisList) chassisList.setMatrixAt(idx, invisibleMatrix);
+                if(wheelList) for(let j=0; j<4; j++) wheelList.setMatrixAt(idx*4+j, invisibleMatrix);
+                delete remotePlayers[conn.peer];
+            }
+            delete connections[conn.peer];
+        };
+        conn.on('close', cleanup); conn.on('error', cleanup);
+    }
+
+    function updateRemote(id, d) {
+        if(!remotePlayers[id]) {
+            const idx = Object.keys(remotePlayers).length;
+            if (idx >= MAX_GHOSTS) return;
+            remotePlayers[id] = { idx, tP: new THREE.Vector3(), tQ: new THREE.Quaternion(), tW: [], lastSeen: Date.now() };
+        }
+        const rp = remotePlayers[id];
+        rp.lastSeen = Date.now();
+        rp.tP.set(d.p.x, d.p.y, d.p.z); rp.tQ.set(d.q.x, d.q.y, d.q.z, d.q.w);
+        if(d.w) rp.tW = d.w;
+    }
+
+    window.connectToPeer = () => { const tid = document.getElementById('join-seed').value.trim(); if(tid && tid !== myId) setupConn(peer.connect(tid), true); };
+    window.copyMyId = () => { if(myId) navigator.clipboard.writeText(myId); };
+
+    let drive = { throttle: 0, steer: 0, brake: false }, activePtr = null;
+    const joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper');
     joyW.onpointerdown = e => { activePtr = e.pointerId; handleJoy(e); };
     window.onpointermove = e => { if(e.pointerId === activePtr) handleJoy(e); };
     window.onpointerup = e => { if(e.pointerId === activePtr) { activePtr = null; joyK.style.transform = ''; drive.throttle = 0; drive.steer = 0; } };
     function handleJoy(e) {
         const r = joyW.getBoundingClientRect();
-        let dx = e.clientX - (r.left + 50), dy = e.clientY - (r.top + 50);
+        let dx = e.clientX - (r.left + r.width/2), dy = e.clientY - (r.top + r.height/2);
         const d = Math.min(Math.sqrt(dx*dx + dy*dy), 45);
         if (d > 0) {
-            const mag = Math.sqrt(dx*dx+dy*dy);
-            joyK.style.transform = `translate(${(dx/mag)*d}px, ${(dy/mag)*d}px)`;
+            joyK.style.transform = `translate(${(dx/45)*d}px, ${(dy/45)*d}px)`;
             drive.throttle = -dy/45; drive.steer = -dx/45;
         }
     }
     document.getElementById('brake-btn').onpointerdown = () => drive.brake = true;
-    window.addEventListener('pointerup', () => drive.brake = false);
+    window.addEventListener('pointerup', e => { if(e.pointerId !== activePtr) drive.brake = false; });
 
     const clock = new THREE.Clock(), prevPos = new THREE.Vector3();
-    let lastUpdatePos = new THREE.Vector3(0,0,0), easedBrake = 0;
+    let lastUpdatePos = new THREE.Vector3(0,0,0), recoveryTimer = 0;
 
     function animate() {
         requestAnimationFrame(animate);
-        const delta = clock.getDelta();
-        const speed = vehicle.currentVehicleSpeedKmHour, absSpeed = Math.abs(speed);
+        const dt = clock.getDelta(), speed = vehicle.currentVehicleSpeedKmHour, absS = Math.abs(speed);
+        const now = Date.now();
 
-        const subSteps = 30; 
-        const timeStep = 1 / (60 * subSteps); 
+        const subSteps = 30, tStep = 1 / (60 * subSteps); 
         for (let i = 0; i < subSteps; i++) {
-            world.step(timeStep);
-            const v = chassisBody.velocity.length();
-            if (v > MAX_SPEED_MS) {
-                chassisBody.velocity.normalize();
-                chassisBody.velocity.scale(MAX_SPEED_MS, chassisBody.velocity);
+            world.step(tStep);
+            // Restore Collision Matrix logic
+            collisionPoints.forEach(lp => {
+                const wp = new CANNON.Vec3();
+                chassisBody.quaternion.vmult(lp, wp);
+                wp.vadd(chassisBody.position, wp);
+                const floorY = getHeight(wp.x, wp.z);
+                if (wp.y < floorY) {
+                    const penetration = floorY - wp.y;
+                    chassisBody.applyImpulse(new CANNON.Vec3(0, (penetration * MASS * (recoveryTimer > 0.5 ? 800 : 240)) * tStep, 0), wp.vsub(chassisBody.position));
+                }
+            });
+        }
+
+        // Restore Stability / Recovery Logic
+        const carUp = new CANNON.Vec3(0, 1, 0);
+        chassisBody.quaternion.vmult(carUp, carUp);
+        const uprightFactor = carUp.dot(new CANNON.Vec3(0, 1, 0));
+        if (uprightFactor < 0.6) { 
+            recoveryTimer += dt;
+            if (recoveryTimer > 1.0) { 
+                const rollAxis = new CANNON.Vec3();
+                carUp.cross(new CANNON.Vec3(0, 1, 0), rollAxis);
+                rollAxis.normalize();
+                chassisBody.angularVelocity.x += rollAxis.x * 3.5;
+                chassisBody.angularVelocity.z += rollAxis.z * 3.5;
+                if (recoveryTimer < 1.1) chassisBody.velocity.y += 10;
+                document.getElementById('recovery-status').innerText = "RECOVERING...";
             }
-        }
+        } else { recoveryTimer = 0; document.getElementById('recovery-status').innerText = "STABLE"; }
 
-        const engineForce = (absSpeed < MAX_SPEED_KMH) ? drive.throttle * 4.1e15 : 0;
-        const targetBrake = drive.brake ? (MASS * (absSpeed / 3.6)) / 2.0 : 0;
-        const easeFactor = drive.brake ? 0.00005 : 0.1;
-        easedBrake += (targetBrake - easedBrake) * easeFactor;
+        const eForce = (absS < MAX_SPEED_KMH && !drive.brake) ? drive.throttle * 4.1e15 : 0;
+        const bForce = drive.brake ? 1e20 : 0;
+        for(let i=0; i<4; i++) { vehicle.applyEngineForce(eForce, i); vehicle.setBrake(bForce, i); }
+        vehicle.setSteeringValue(drive.steer * 0.08, 2); vehicle.setSteeringValue(drive.steer * 0.08, 3);
 
-        for(let i=0; i<4; i++) {
-            vehicle.applyEngineForce(engineForce, i);
-            vehicle.setBrake(easedBrake / 4, i);
-        }
+        localCarMesh.position.copy(chassisBody.position); localCarMesh.quaternion.copy(chassisBody.quaternion);
+        document.getElementById('speed-val').innerText = Math.round(absS).toLocaleString();
         
-        // STATIC WEAK STEERING (Locked at 0.08)
-        const steerStrength = 0.08;
-        vehicle.setSteeringValue(drive.steer * steerStrength, 2);
-        vehicle.setSteeringValue(drive.steer * steerStrength, 3);
-
-        carMesh.position.copy(chassisBody.position); carMesh.quaternion.copy(chassisBody.quaternion);
-        vehicle.wheelInfos.forEach((w, i) => { 
-            vehicle.updateWheelTransform(i); 
+        vehicle.wheelInfos.forEach((w, i) => {
+            vehicle.updateWheelTransform(i);
             if (wheelMeshes[i]) {
-                wheelMeshes[i].position.copy(w.worldTransform.position); 
-                wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion); 
-                wheelMeshes[i].children[0].rotateX((speed * delta) / WHEEL_RADIUS * 0.1 * ((i >= 2) ? -1 : 1));
+                wheelMeshes[i].position.copy(w.worldTransform.position);
+                wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion);
+                if(!drive.brake) wheelMeshes[i].children[0].rotateX((speed * dt) / WHEEL_RADIUS * 0.1 * ((i >= 2) ? -1 : 1));
             }
         });
 
+        if (peer && myId && Object.keys(connections).length > 0) {
+            const pkt = { p: chassisBody.position, q: chassisBody.quaternion, w: vehicle.wheelInfos.map(wi => ({ p: wi.worldTransform.position, q: wi.worldTransform.quaternion })), u: usernameInput.value };
+            for (let id in connections) if(connections[id].open) connections[id].send(pkt);
+        }
+        
+        if (chassisList && wheelList) {
+            for (let id in remotePlayers) {
+                const p = remotePlayers[id];
+                if (now - p.lastSeen > 5000) {
+                    chassisList.setMatrixAt(p.idx, invisibleMatrix);
+                    for(let j=0; j<4; j++) wheelList.setMatrixAt(p.idx*4+j, invisibleMatrix);
+                    delete remotePlayers[id]; continue;
+                }
+                instMatrix.compose(p.tP, p.tQ, _sCar);
+                chassisList.setMatrixAt(p.idx, instMatrix);
+                if(p.tW.length === 4) {
+                    p.tW.forEach((wd, j) => {
+                        _v3.set(wd.p.x, wd.p.y, wd.p.z); _q.set(wd.q.x, wd.q.y, wd.q.z, wd.q.w);
+                        instMatrix.compose(_v3, _q, _sWheel);
+                        wheelList.setMatrixAt(p.idx * 4 + j, instMatrix);
+                    });
+                }
+            }
+            chassisList.instanceMatrix.needsUpdate = true;
+            wheelList.instanceMatrix.needsUpdate = true;
+        }
+
         if (chassisBody.position.distanceTo(lastUpdatePos) > 200) { syncTerrain(chassisBody.position.x, chassisBody.position.z); lastUpdatePos.copy(chassisBody.position); }
-        
-        camera.fov = 70 + (absSpeed / 40); camera.updateProjectionMatrix();
+        camera.fov = 70 + (absS / 40); camera.updateProjectionMatrix();
         camera.position.add(new THREE.Vector3().subVectors(chassisBody.position, prevPos));
-        controls.target.copy(chassisBody.position);
-        prevPos.copy(chassisBody.position);
-        
-        document.getElementById('speed-val').innerText = Math.round(absSpeed).toLocaleString();
-        
-        controls.update(); renderer.render(scene, camera);
+        orbit.target.copy(chassisBody.position); prevPos.copy(chassisBody.position);
+        orbit.update(); renderer.render(scene, camera);
     }
-    syncTerrain(0, 0); animate();
+
+    syncTerrain(0, 0); initMultiplayer(); animate();
 </script>
 </body>
 </html>
