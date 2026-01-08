@@ -226,7 +226,15 @@
         });
         conn.on('data', (d) => { 
             if(d.type === 'REQ_SEED') conn.send({ type: 'SYNC_SEED', seed: currentWorldSeed });
-            if(d.type === 'SYNC_SEED') { currentWorldSeed = d.seed; simplex = new SimplexNoise(d.seed); syncTerrain(0,0); }
+            if(d.type === 'SYNC_SEED') { 
+                // JOINER ROUTINE: Velocity Halt -> Teleport -> Redraw
+                currentWorldSeed = d.seed; 
+                simplex = new SimplexNoise(d.seed); 
+                chassisBody.position.set(0, 20, 0);
+                chassisBody.velocity.set(0, 0, 0);
+                chassisBody.angularVelocity.set(0, 0, 0);
+                syncTerrain(0, 0); 
+            }
             if(d.p) updateRemote(conn.peer, d); 
         });
         const cleanup = () => {
