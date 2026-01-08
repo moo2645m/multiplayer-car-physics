@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan V4.5.6</title>
+    <title>Red Sedan V4.5.7</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
         #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; z-index: 10; display: flex; align-items: center; justify-content: center; }
@@ -40,7 +40,7 @@
 <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
 <div id="brake-btn">BRAKE</div>
 <div id="ui">
-    RED SEDAN | V4.5.6<br>
+    RED SEDAN | V4.5.7<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
     X: <span id="pos-x">0</span><br>
     Z: <span id="pos-z">0</span><br>
@@ -91,7 +91,7 @@
 
     const world = new CANNON.World();
     world.gravity.set(0, -150, 0);
-    world.solver.iterations = 40; // Optimized iterations for S25
+    world.solver.iterations = 20; // Hard optimization for mobile
 
     const groundMat = new CANNON.Material("ground"), carMat = new CANNON.Material("car");
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, carMat, {
@@ -102,6 +102,7 @@
     const terrainGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, DATA_RES - 1, DATA_RES - 1);
     terrainGeo.rotateX(-Math.PI / 2);
     const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x444444, wireframe: true }));
+    terrainMesh.matrixAutoUpdate = false; // Performance gain
     scene.add(terrainMesh);
 
     let hfBody = null;
@@ -110,6 +111,7 @@
         const step = GRID_SIZE / 4; 
         const snapX = Math.floor(cx / step) * step, snapZ = Math.floor(cz / step) * step;
         terrainMesh.position.set(snapX, 0, snapZ);
+        terrainMesh.updateMatrix(); 
         const matrix = [];
         for (let i = 0; i < DATA_RES; i++) {
             matrix.push(new Float32Array(DATA_RES));
@@ -145,6 +147,7 @@
     for (let z = -2.8; z <= 2.8; z += 1.4) for (let x = -1.4; x <= 1.4; x += 1.4) for (let y = -0.8; y <= 0.8; y += 0.4) collisionPoints.push(new CANNON.Vec3(x, y, z));
 
     const localCarMesh = new THREE.Group();
+    localCarMesh.matrixAutoUpdate = false; // Performance gain
     scene.add(localCarMesh);
     
     let chassisList, wheelList;
@@ -180,6 +183,7 @@
             const wModel = SkeletonUtils.clone(Assets.wheel);
             wModel.scale.set(WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8, WHEEL_RADIUS*0.8);
             wGroup.add(wModel);
+            wGroup.matrixAutoUpdate = false; 
             scene.add(wGroup);
             wheelMeshes[i] = wGroup;
         }
@@ -234,44 +238,42 @@
     window.connectToPeer = () => { const tid = document.getElementById('join-seed').value.trim(); if(tid && tid !== myId) setupConn(peer.connect(tid), true); };
     window.copyMyId = () => { if(myId) navigator.clipboard.writeText(myId); };
 
-    // FIX: Optimized Joystick Logic
+    // FIX: Hard Clamped Joystick
     let drive = { throttle: 0, steer: 0, brake: false }, activePtr = null;
     const joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper');
-    
+    const MAX_JOY_DIST = 30; // Hard clamp radius
+
     joyW.onpointerdown = e => { activePtr = e.pointerId; handleJoy(e); };
     window.addEventListener('pointermove', e => { if(e.pointerId === activePtr) handleJoy(e); });
     window.addEventListener('pointerup', e => { if(e.pointerId === activePtr) { activePtr = null; joyK.style.transform = ''; drive.throttle = 0; drive.steer = 0; } });
 
     function handleJoy(e) {
         const r = joyW.getBoundingClientRect();
-        const centerX = r.left + r.width / 2;
-        const centerY = r.top + r.height / 2;
-        let dx = e.clientX - centerX;
-        let dy = e.clientY - centerY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const maxDist = 45;
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        let dx = e.clientX - cx, dy = e.clientY - cy;
+        const d = Math.sqrt(dx * dx + dy * dy);
         
-        if (dist > maxDist) {
-            dx *= maxDist / dist;
-            dy *= maxDist / dist;
+        // Strict boundary clamping
+        if (d > MAX_JOY_DIST) {
+            const angle = Math.atan2(dy, dx);
+            dx = Math.cos(angle) * MAX_JOY_DIST;
+            dy = Math.sin(angle) * MAX_JOY_DIST;
         }
         
         joyK.style.transform = `translate(${dx}px, ${dy}px)`;
-        drive.throttle = -dy / maxDist;
-        drive.steer = -dx / maxDist;
+        drive.throttle = -dy / MAX_JOY_DIST;
+        drive.steer = -dx / MAX_JOY_DIST;
     }
 
     document.getElementById('brake-btn').onpointerdown = () => drive.brake = true;
     window.addEventListener('pointerup', e => { if(e.pointerId !== activePtr) drive.brake = false; });
 
-    // FIX: UI Element Cache
-    const uiSpeed = document.getElementById('speed-val');
-    const uiX = document.getElementById('pos-x');
-    const uiZ = document.getElementById('pos-z');
-    const uiStable = document.getElementById('recovery-status');
+    // UI Cache
+    const elSpeed = document.getElementById('speed-val'), elX = document.getElementById('pos-x'), elZ = document.getElementById('pos-z'), elStable = document.getElementById('recovery-status');
 
     const clock = new THREE.Clock(), prevPos = new THREE.Vector3();
-    let lastUpdatePos = new THREE.Vector3(0,0,0), recoveryTimer = 0;
+    let lastUpdatePos = new THREE.Vector3(0,0,0), recoveryTimer = 0, uiTimer = 0;
+    const _wp = new CANNON.Vec3(); // Vector Pooling Optimization
 
     function animate() {
         requestAnimationFrame(animate);
@@ -282,13 +284,12 @@
         for (let i = 0; i < subSteps; i++) {
             world.step(tStep);
             collisionPoints.forEach(lp => {
-                const wp = new CANNON.Vec3();
-                chassisBody.quaternion.vmult(lp, wp);
-                wp.vadd(chassisBody.position, wp);
-                const floorY = getHeight(wp.x, wp.z);
-                if (wp.y < floorY) {
-                    const penetration = floorY - wp.y;
-                    chassisBody.applyImpulse(new CANNON.Vec3(0, (penetration * MASS * (recoveryTimer > 0.5 ? 800 : 240)) * tStep, 0), wp.vsub(chassisBody.position));
+                chassisBody.quaternion.vmult(lp, _wp);
+                _wp.vadd(chassisBody.position, _wp);
+                const floorY = getHeight(_wp.x, _wp.z);
+                if (_wp.y < floorY) {
+                    const penetration = floorY - _wp.y;
+                    chassisBody.applyImpulse(new CANNON.Vec3(0, (penetration * MASS * (recoveryTimer > 0.5 ? 800 : 240)) * tStep, 0), _wp.vsub(chassisBody.position));
                 }
             });
         }
@@ -305,9 +306,9 @@
                 chassisBody.angularVelocity.x += rollAxis.x * 3.5;
                 chassisBody.angularVelocity.z += rollAxis.z * 3.5;
                 if (recoveryTimer < 1.1) chassisBody.velocity.y += 10;
-                uiStable.innerText = "RECOVERING...";
+                elStable.innerText = "RECOVERING...";
             }
-        } else { recoveryTimer = 0; uiStable.innerText = "STABLE"; }
+        } else { recoveryTimer = 0; elStable.innerText = "STABLE"; }
 
         const eForce = (absS < MAX_SPEED_KMH && !drive.brake) ? drive.throttle * 4.1e15 : 0;
         const bForce = drive.brake ? 1e20 : 0;
@@ -315,17 +316,22 @@
         vehicle.setSteeringValue(drive.steer * 0.08, 2); vehicle.setSteeringValue(drive.steer * 0.08, 3);
 
         localCarMesh.position.copy(chassisBody.position); localCarMesh.quaternion.copy(chassisBody.quaternion);
-        
-        // FIX: Update UI Position Displays
-        uiSpeed.innerText = Math.round(absS).toLocaleString();
-        uiX.innerText = Math.round(chassisBody.position.x);
-        uiZ.innerText = Math.round(chassisBody.position.z);
+        localCarMesh.updateMatrix();
+
+        // Optimized UI refresh
+        uiTimer++;
+        if(uiTimer % 5 === 0) {
+            elSpeed.innerText = Math.round(absS).toLocaleString();
+            elX.innerText = Math.round(chassisBody.position.x);
+            elZ.innerText = Math.round(chassisBody.position.z);
+        }
         
         vehicle.wheelInfos.forEach((w, i) => {
             vehicle.updateWheelTransform(i);
             if (wheelMeshes[i]) {
                 wheelMeshes[i].position.copy(w.worldTransform.position);
                 wheelMeshes[i].quaternion.copy(w.worldTransform.quaternion);
+                wheelMeshes[i].updateMatrix();
                 if(!drive.brake) wheelMeshes[i].children[0].rotateX((speed * dt) / WHEEL_RADIUS * 0.1 * ((i >= 2) ? -1 : 1));
             }
         });
