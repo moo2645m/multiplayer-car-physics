@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Red Sedan V4.5.7</title>
+    <title>Red Sedan V4.5.9</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; user-select: none; }
         #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; z-index: 10; display: flex; align-items: center; justify-content: center; }
@@ -30,7 +30,7 @@
         <input type="text" id="username-in" maxlength="24">
         <hr style="border:0; border-top:1px solid #333; width:100%">
         <label>JOIN PEER ID:</label>
-        <input type="text" id="join-seed" placeholder="Paste Peer ID here...">
+        <input type="number" id="join-seed" placeholder="Enter 10-digit ID...">
         <div class="btn" onclick="connectToPeer()">JOIN SESSION</div>
         <div id="conn-status" style="font-size:9px; color:#ff0000">Status: Offline</div>
         <div id="peer-id-display" style="font-size:9px; color:#ff0000; margin-top:5px; word-break:break-all; cursor:pointer" onclick="copyMyId()">MY ID: Generating...</div>
@@ -40,7 +40,7 @@
 <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
 <div id="brake-btn">BRAKE</div>
 <div id="ui">
-    RED SEDAN | V4.5.7<br>
+    RED SEDAN | V4.5.9<br>
     SPEED: <span id="speed-val">0</span> KM/H<br>
     X: <span id="pos-x">0</span><br>
     Z: <span id="pos-z">0</span><br>
@@ -91,7 +91,7 @@
 
     const world = new CANNON.World();
     world.gravity.set(0, -150, 0);
-    world.solver.iterations = 20; // Hard optimization for mobile
+    world.solver.iterations = 20; 
 
     const groundMat = new CANNON.Material("ground"), carMat = new CANNON.Material("car");
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, carMat, {
@@ -102,7 +102,7 @@
     const terrainGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, DATA_RES - 1, DATA_RES - 1);
     terrainGeo.rotateX(-Math.PI / 2);
     const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0x444444, wireframe: true }));
-    terrainMesh.matrixAutoUpdate = false; // Performance gain
+    terrainMesh.matrixAutoUpdate = false; 
     scene.add(terrainMesh);
 
     let hfBody = null;
@@ -147,7 +147,7 @@
     for (let z = -2.8; z <= 2.8; z += 1.4) for (let x = -1.4; x <= 1.4; x += 1.4) for (let y = -0.8; y <= 0.8; y += 0.4) collisionPoints.push(new CANNON.Vec3(x, y, z));
 
     const localCarMesh = new THREE.Group();
-    localCarMesh.matrixAutoUpdate = false; // Performance gain
+    localCarMesh.matrixAutoUpdate = false; 
     scene.add(localCarMesh);
     
     let chassisList, wheelList;
@@ -192,13 +192,31 @@
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.minDistance = 8; orbit.maxDistance = 20;
 
+    // MULTIPLAYER LOGIC
     let peer, myId, connections = {}, remotePlayers = {};
     const usernameInput = document.getElementById('username-in');
 
     function initMultiplayer() {
-        peer = new Peer({ debug: 1 });
-        peer.on('open', (id) => { myId = id; document.getElementById('peer-id-display').innerText = "MY ID: " + id; });
+        const tenDigitId = Math.floor(1e9 + Math.random() * 9e9).toString();
+        peer = new Peer(tenDigitId, { 
+            debug: 1,
+            config: { 'iceServers': [{ url: 'stun:stun.l.google.com:19302' }] }
+        });
+        
+        peer.on('open', (id) => { 
+            myId = id; 
+            document.getElementById('peer-id-display').innerText = "MY ID: " + id; 
+            document.getElementById('peer-id-display').style.color = "#00ff00";
+            document.getElementById('conn-status').innerText = "Status: Online";
+            document.getElementById('conn-status').style.color = "#00ff00";
+        });
+        
         peer.on('connection', (conn) => setupConn(conn, false));
+        
+        peer.on('error', (err) => {
+            document.getElementById('conn-status').innerText = "Status: Offline (" + err.type + ")";
+            document.getElementById('conn-status').style.color = "#ff0000";
+        });
     }
 
     function setupConn(conn, isJoiner) {
@@ -238,10 +256,9 @@
     window.connectToPeer = () => { const tid = document.getElementById('join-seed').value.trim(); if(tid && tid !== myId) setupConn(peer.connect(tid), true); };
     window.copyMyId = () => { if(myId) navigator.clipboard.writeText(myId); };
 
-    // FIX: Hard Clamped Joystick
     let drive = { throttle: 0, steer: 0, brake: false }, activePtr = null;
     const joyK = document.getElementById('joystick-knob'), joyW = document.getElementById('joystick-wrapper');
-    const MAX_JOY_DIST = 30; // Hard clamp radius
+    const MAX_JOY_DIST = 30; 
 
     joyW.onpointerdown = e => { activePtr = e.pointerId; handleJoy(e); };
     window.addEventListener('pointermove', e => { if(e.pointerId === activePtr) handleJoy(e); });
@@ -252,14 +269,11 @@
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
         let dx = e.clientX - cx, dy = e.clientY - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
-        
-        // Strict boundary clamping
         if (d > MAX_JOY_DIST) {
             const angle = Math.atan2(dy, dx);
             dx = Math.cos(angle) * MAX_JOY_DIST;
             dy = Math.sin(angle) * MAX_JOY_DIST;
         }
-        
         joyK.style.transform = `translate(${dx}px, ${dy}px)`;
         drive.throttle = -dy / MAX_JOY_DIST;
         drive.steer = -dx / MAX_JOY_DIST;
@@ -268,12 +282,10 @@
     document.getElementById('brake-btn').onpointerdown = () => drive.brake = true;
     window.addEventListener('pointerup', e => { if(e.pointerId !== activePtr) drive.brake = false; });
 
-    // UI Cache
     const elSpeed = document.getElementById('speed-val'), elX = document.getElementById('pos-x'), elZ = document.getElementById('pos-z'), elStable = document.getElementById('recovery-status');
-
     const clock = new THREE.Clock(), prevPos = new THREE.Vector3();
     let lastUpdatePos = new THREE.Vector3(0,0,0), recoveryTimer = 0, uiTimer = 0;
-    const _wp = new CANNON.Vec3(); // Vector Pooling Optimization
+    const _wp = new CANNON.Vec3(); 
 
     function animate() {
         requestAnimationFrame(animate);
@@ -318,7 +330,6 @@
         localCarMesh.position.copy(chassisBody.position); localCarMesh.quaternion.copy(chassisBody.quaternion);
         localCarMesh.updateMatrix();
 
-        // Optimized UI refresh
         uiTimer++;
         if(uiTimer % 5 === 0) {
             elSpeed.innerText = Math.round(absS).toLocaleString();
