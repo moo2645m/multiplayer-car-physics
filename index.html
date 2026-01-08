@@ -388,7 +388,11 @@
         orbit.target.copy(chassisBody.position); prevPos.copy(chassisBody.position);
         orbit.update(); renderer.render(scene, camera);
     }
-
+window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
     syncTerrain(0, 0); initMultiplayer(); animate();
 </script>
 </body>
